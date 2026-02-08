@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="description" content="Бесплатный онлайн генератор QR-кодов с выбором размера, цвета и уровня коррекции ошибок. Создавайте QR-коды для ссылок, текста, email и телефонов.">
+    <meta name="keywords" content="QR код генератор, создать QR код, онлайн QR код, бесплатный QR код, QR код для ссылки, QR код для текста, генератор QR кодов">
+    <meta name="author" content="QR Генератор">
+    <meta name="robots" content="index, follow">
+    <meta property="og:title" content="QR Генератор - Создавайте QR-коды онлайн">
+    <meta property="og:description" content="Бесплатный онлайн генератор QR-кодов с выбором размера и цвета">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ url_for('index', _external=True) }}">
+    <meta property="og:image" content="{{ url_for('static', filename='img/og-image.png', _external=True) }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="QR Генератор - Создавайте QR-коды онлайн">
+    <meta name="twitter:description" content="Бесплатный онлайн генератор QR-кодов">
+    
+    <title>QR Генератор - Бесплатный онлайн создатель QR-кодов с выбором размера</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../static/css/style.css">
+    
+    <!-- Schema.org markup for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "QR Генератор",
+        "description": "Бесплатный онлайн генератор QR-кодов с выбором размера, цвета и уровня коррекции ошибок",
+        "url": "{{ url_for('index', _external=True) }}",
+        "applicationCategory": "UtilityApplication",
+        "operatingSystem": "Any",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "QR Генератор"
+        }
+    }
+    </script>
+</head>
+
+<body class="py-4">
+    <!-- Флеш-сообщения -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'warning' if category == 'warning' else 'success' }} alert-dismissible fade show mt-3" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Кнопка "Вернуться к форме" -->
+    <button class="btn btn-primary back-to-form-btn" id="backToFormBtn" aria-label="Вернуться к форме генератора">
+        <i class="bi bi-arrow-up"></i> К форме
+    </button>
+
+    <div class="container">
+        <!-- Заголовок с семантической разметкой -->
+        <header class="text-center mb-5">
+            <h1 class="display-5 fw-bold mb-3">
+                <i class="bi bi-qr-code me-2" style="color: var(--primary-color);"></i>
+                Бесплатный онлайн генератор QR-кодов
+            </h1>
+            <p class="lead text-muted">Создавайте QR-коды для ссылок, текста, email и телефонов с выбором размера и цвета</p>
+        </header>
+
+        <!-- Основная форма с якорем -->
+        <div class="card shadow-lg mb-5" id="generatorForm">
+            <div class="card-body p-4 p-md-5">
+                <form method="POST" id="qrForm">
+                    <!-- Поле ввода -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold fs-5" for="dataInput">
+                            <i class="bi bi-text-paragraph me-2"></i>
+                            Введите данные для QR-кода:
+                        </label>
+                        <textarea name="data" class="form-control form-control-lg" id="dataInput" rows="4"
+                            placeholder="Введите текст, ссылку, email, телефон..." required
+                            style="min-height: 120px;" aria-label="Поле для ввода данных QR-кода">{{ request.form.get('data', '') }}</textarea>
+                        <div class="form-text text-muted mt-2">
+                            <i class="bi bi-info-circle"></i> Поддерживаются: URL, текст, email (mailto:test@example.com), телефон (tel:+79991234567)
+                        </div>
+                    </div>
+
+                    <!-- Выбор размера -->
+                    <div class="mb-5">
+                        <h2 class="form-label fw-bold fs-5 mb-3">
+                            <i class="bi bi-arrows-fullscreen me-2"></i>
+                            Выберите размер QR-кода:
+                        </h2>
+                        <div class="size-btn-group">
+                            {% for size in size_options %}
+                            <label
+                                class="size-btn {% if (qr_info and qr_info.selected_size.id == size.id) or (not qr_info and size.id == 'm') %}selected{% endif %}"
+                                aria-label="Размер {{ size.name }}">
+                                <input type="radio" name="size" value="{{ size.id }}" {% if (qr_info and
+                                    qr_info.selected_size.id==size.id) or (not qr_info and size.id=='m' ) %}checked{%
+                                    endif %} class="visually-hidden" data-size="{{ size.box_size }}">
+                                <div class="size-icon">
+                                    <i class="bi {{ size.icon }}"></i>
+                                </div>
+                                <div class="fw-bold mb-1">{{ size.name }}</div>
+                                <div class="small mb-2">
+                                    <span class="badge bg-dark">{{ size.box_size }}px модуль</span>
+                                    <span class="badge bg-secondary ms-1">{{ size.border }}px рамка</span>
+                                </div>
+                                <small class="text-muted d-block">{{ size.desc }}</small>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Дополнительные опции -->
+                    <div class="options-section" id="colorSection">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <h3 class="form-label fw-bold">
+                                    <i class="bi bi-palette me-2"></i> Цвет QR-кода:
+                                </h3>
+                                
+                                <!-- Панель с базовыми цветами -->
+                                <div class="color-palette mb-3">
+                                    {% for color in color_options %}
+                                    <div class="color-option {% if color == '#000000' %}selected{% endif %}" 
+                                         style="background-color: {{ color }};"
+                                         data-color="{{ color }}"
+                                         aria-label="Цвет {{ color }}">
+                                        {% if color == '#000000' %}
+                                        <i class="bi bi-check"></i>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                    
+                                    <!-- Кастомный цвет -->
+                                    <div class="custom-color-container">
+                                        <button type="button" class="custom-color-btn" id="customColorBtn" aria-label="Выбрать кастомный цвет">
+                                            <i class="bi bi-palette"></i>
+                                        </button>
+                                        <div class="color-picker-popup" id="colorPickerPopup">
+                                            <input type="color" id="customColorPicker" value="#6c63ff" class="form-control mb-2" aria-label="Палитра цветов">
+                                            <button type="button" class="btn btn-sm btn-primary w-100" id="applyColorBtn">
+                                                Применить
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Скрытое поле для цвета -->
+                                <input type="hidden" name="color" id="colorInput" value="#000000">
+                                <div class="form-text text-muted">
+                                    <i class="bi bi-lightbulb"></i> Фон автоматически подбирается контрастным
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <h3 class="form-label fw-bold">
+                                    <i class="bi bi-shield-check me-2"></i> Уровень коррекции ошибок:
+                                </h3>
+                                <select class="form-select" name="error_correction" id="errorCorrectionSelect" aria-label="Выбор уровня коррекции ошибок">
+                                    <option value="L" {% if request.form.get('error_correction', 'M') == 'L' %}selected{% endif %}>L (Низкий, 7%)</option>
+                                    <option value="M" {% if request.form.get('error_correction', 'M') == 'M' %}selected{% endif %}>M (Средний, 15%)</option>
+                                    <option value="Q" {% if request.form.get('error_correction', 'M') == 'Q' %}selected{% endif %}>Q (Высокий, 25%)</option>
+                                    <option value="H" {% if request.form.get('error_correction', 'M') == 'H' %}selected{% endif %}>H (Максимальный, 30%)</option>
+                                </select>
+                                <div class="form-text text-muted mt-2">
+                                    <i class="bi bi-info-circle"></i> Чем выше уровень, тем больше повреждений может выдержать QR-код
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Кнопка генерации -->
+                    <div id="generateSection">
+                        <button type="submit" class="btn generate-btn w-100" id="generateBtn" aria-label="Сгенерировать QR-код">
+                            <i class="bi bi-lightning-charge-fill me-2"></i>
+                            Сгенерировать QR-код
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Результат с якорем -->
+        {% if qr_data_url and qr_info %}
+        <div class="card shadow-lg mb-5" id="qrResult">
+            <div class="card-header bg-gradient border-0"
+                style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));">
+                <h2 class="mb-0 text-white">
+                    <i class="bi bi-check-circle-fill me-2"></i> Ваш QR-код готов!
+                </h2>
+            </div>
+            <div class="card-body p-4">
+                <div class="row align-items-center">
+                    <!-- QR изображение с alt текстом -->
+                    <div class="col-lg-6 text-center mb-4 mb-lg-0">
+                        <div class="qr-image-container">
+                            <img src="{{ qr_data_url }}" alt="QR код для: {{ qr_info.data_length }} символов" class="qr-image img-fluid"
+                                style="max-width: 350px;">
+                        </div>
+                        
+                        <!-- Группа действий -->
+                        <div class="qr-actions">
+                            <a href="{{ qr_data_url }}"
+                                download="qr_code_{{ qr_info.selected_size.id }}_{{ qr_info.version }}.png"
+                                class="btn btn-primary" id="downloadBtn" aria-label="Скачать QR код">
+                                <i class="bi bi-download me-2"></i> Скачать PNG
+                            </a>
+                            <button class="btn btn-outline-primary" id="shareBtn" aria-label="Поделиться QR кодом">
+                                <i class="bi bi-share me-2"></i> Поделиться
+                            </button>
+                            <button class="btn btn-outline-secondary" id="copyBtn" aria-label="Копировать ссылку на QR код">
+                                <i class="bi bi-clipboard me-2"></i> Копировать
+                            </button>
+                            <button class="btn make-another-btn" id="makeAnotherBtn" aria-label="Создать новый QR код">
+                                <i class="bi bi-plus-circle me-2"></i> Сделать еще
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Техническая информация -->
+                    <div class="col-lg-6">
+                        <h3 class="mb-3">
+                            <i class="bi bi-info-circle me-2"></i> Техническая информация
+                        </h3>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover">
+                                <tbody>
+                                    <tr>
+                                        <th scope="row">Выбранный размер:</th>
+                                        <td>
+                                            {{ qr_info.selected_size.name }}
+                                            <span class="badge bg-primary ms-2">{{ qr_info.selected_size.box_size }}px</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">Цвет QR-кода:</th>
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <div style="width: 20px; height: 20px; background-color: {{ qr_info.color }}; border-radius: 4px; border: 1px solid var(--border-color);" aria-hidden="true"></div>
+                                                <code>{{ qr_info.color }}</code>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">Цвет фона:</th>
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <div style="width: 20px; height: 20px; background-color: {{ qr_info.background_color }}; border-radius: 4px; border: 1px solid var(--border-color);" aria-hidden="true"></div>
+                                                <code>{{ qr_info.background_color }}</code>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">Коррекция ошибок:</th>
+                                        <td>{{ qr_info.error_level }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">Размер изображения:</th>
+                                        <td>
+                                            <span class="badge bg-secondary">{{ qr_info.size_px[0] }}×{{ qr_info.size_px[1] }}px</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">Длина данных:</th>
+                                        <td>{{ qr_info.data_length }} символов</td>
+                                    </tr>
+                                    {% if qr_info.generated_at %}
+                                    <tr>
+                                        <th scope="row">Создан:</th>
+                                        <td>{{ qr_info.generated_at }}</td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- SEO-оптимизированная информация -->
+        <div class="card shadow-lg mt-5">
+            <div class="card-body">
+                <h2 class="seo-heading">
+                    <i class="bi bi-info-circle-fill me-2" style="color: var(--primary-color);"></i>
+                    Как использовать генератор QR-кодов
+                </h2>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4 mb-md-0">
+                        <h3 class="h5 fw-bold mb-3">Что такое QR-код?</h3>
+                        <p class="seo-paragraph">
+                            QR-код (Quick Response code) — это двумерный штрих-код, который можно сканировать с помощью камеры смартфона. 
+                            Он может содержать различную информацию: ссылки на сайты, текстовые сообщения, контактные данные, 
+                            координаты местоположения и многое другое.
+                        </p>
+                        
+                        <h3 class="h5 fw-bold mb-3">Преимущества нашего генератора:</h3>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i> Абсолютно бесплатно</li>
+                            <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i> Без регистрации</li>
+                            <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i> Мгновенная генерация</li>
+                            <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i> Высокое качество QR-кодов</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i> Поддержка всех современных форматов</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h3 class="h5 fw-bold mb-3">Для чего можно использовать QR-коды:</h3>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-sm">
+                                <thead class="table-secondary">
+                                    <tr>
+                                        <th>Область применения</th>
+                                        <th>Пример</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Маркетинг</td>
+                                        <td>Рекламные материалы, визитки</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Образование</td>
+                                        <td>Ссылки на учебные материалы</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Бизнес</td>
+                                        <td>Оплата товаров, меню ресторанов</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Личное использование</td>
+                                        <td>Контакты, Wi-Fi пароли</td>
+                                    </tr>
+                                    <tr>
+                                        <td>События</td>
+                                        <td>Билеты, приглашения</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- FAQ для SEO -->
+                <div class="mt-5 pt-4 border-top border-secondary">
+                    <h3 class="h5 fw-bold mb-4">
+                        <i class="bi bi-question-circle-fill me-2" style="color: var(--primary-color);"></i>
+                        Часто задаваемые вопросы
+                    </h3>
+                    
+                    <div class="accordion" id="faqAccordion">
+                        <div class="accordion-item border-0 bg-transparent">
+                            <h4 class="accordion-header">
+                                <button class="accordion-button bg-transparent text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                                    Какой размер QR-кода лучше выбрать?
+                                </button>
+                            </h4>
+                            <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body text-muted">
+                                    Для веб-сайтов и документов выбирайте размер 5-10px. Для печати на бумаге — 10-15px. 
+                                    Для плакатов и больших дисплеев — 15-20px и более.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="accordion-item border-0 bg-transparent">
+                            <h4 class="accordion-header">
+                                <button class="accordion-button bg-transparent text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                                    Можно ли изменить цвет QR-кода?
+                                </button>
+                            </h4>
+                            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body text-muted">
+                                    Да, вы можете выбрать любой цвет из палитры или указать свой кастомный цвет. 
+                                    Мы рекомендуем использовать контрастные цвета для лучшего сканирования.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="accordion-item border-0 bg-transparent">
+                            <h4 class="accordion-header">
+                                <button class="accordion-button bg-transparent text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                                    Какой уровень коррекции ошибок выбрать?
+                                </button>
+                            </h4>
+                            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body text-muted">
+                                    Уровень L (7%) подходит для коротких текстов. M (15%) — оптимальный выбор для большинства случаев. 
+                                    Q (25%) и H (30%) — для важных данных или когда QR-код может быть поврежден.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Футер -->
+        <footer class="text-center mt-5 pt-4 border-top border-secondary">
+            <div class="row">
+                <div class="col-md-6 mb-3 mb-md-0 text-md-start">
+                    <h5 class="fw-bold mb-2">QR Генератор</h5>
+                    <p class="text-muted small">
+                        Бесплатный онлайн инструмент для создания QR-кодов. 
+                        Просто введите текст, выберите настройки и скачайте результат.
+                    </p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="text-muted">
+                        <small>
+                            <i class="bi bi-code-slash me-1"></i>
+                            Создано с помощью Flask и Bootstrap 5
+                            
+                            •
+                            <i class="bi bi-c-circle me-1"></i>
+                            {{ current_year }}
+                        </small>
+                    </p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="..//static/js/script.js"></script>
+</body>
+</html>
