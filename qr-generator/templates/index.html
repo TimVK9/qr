@@ -95,7 +95,7 @@
         <!-- Основная форма с якорем -->
         <div class="card shadow-lg mb-5" id="generatorForm">
             <div class="card-body p-4 p-md-5">
-                <form method="POST" id="qrForm">
+                <form method="POST" id="qrForm" action="{{ url_for('index') }}">
                     <!-- Поле ввода -->
                     <div class="mb-4">
                         <label class="form-label fw-bold fs-5" for="dataInput">
