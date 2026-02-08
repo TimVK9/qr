@@ -2,13 +2,20 @@ services:
   - type: web
     name: qr-generator
     runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      python -c "import sys; print('Python version:', sys.version)"
+      echo "Starting gunicorn..."
+      gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --access-logfile -
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
       - key: SECRET_KEY
         generateValue: true
+      - key: PORT
+        value: 10000
     autoDeploy: true
     healthCheckPath: /health
     plan: free
