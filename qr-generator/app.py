@@ -6,6 +6,22 @@ import base64
 import re
 import os
 
+# Проверка переменных окружения
+PORT = int(os.environ.get('PORT', 5000))
+DEBUG = os.environ.get('FLASK_ENV') == 'development'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+
+# Настройки для продакшн
+if not DEBUG:
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload
+    )
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
