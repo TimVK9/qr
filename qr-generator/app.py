@@ -1,306 +1,287 @@
-from flask import Flask, render_template, request, url_for, flash, redirect
+from flask import Flask, render_template, request, jsonify
 import qrcode
-import io
+from qrcode.constants import ERROR_CORRECT_L, ERROR_CORRECT_M, ERROR_CORRECT_Q, ERROR_CORRECT_H
+from io import BytesIO
 import base64
 import re
-from datetime import datetime
 import os
-from dotenv import load_dotenv
-load_dotenv()
-app = Flask(__name__, static_folder='static', template_folder='templates')
 
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-app.secret_key = os.environ.get('FLASK_SECRET_KEY') or 'fallback-random-string-for-development'
+# Конфигурация для продакшн
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload
+)
 
-
-# Определения размеров
+# Настройки размеров с информацией об ограничениях
 SIZE_OPTIONS = [
     {
         'id': 'xs',
-        'name': 'Очень малый',
-        'box_size': 3,
-        'border': 1,
-        'desc': 'Для иконок и мелкого текста',
-        'icon': 'bi-phone'
-    },
-    {
-        'id': 's', 
-        'name': 'Малый',
+        'name': 'Очень маленький',
         'box_size': 5,
         'border': 2,
-        'desc': 'Для веб-сайтов и документов',
-        'icon': 'bi-tablet'
+        'desc': 'Для очень плотной печати',
+        'icon': 'bi-qr-code-scan',
+        'char_limits': {
+            'L': '~100 символов',
+            'M': '~80 символов', 
+            'Q': '~60 символов',
+            'H': '~40 символов'
+        },
+        'max_version': 10
+    },
+    {
+        'id': 's',
+        'name': 'Маленький',
+        'box_size': 8,
+        'border': 3,
+        'desc': 'Для документов и визиток',
+        'icon': 'bi-qr-code',
+        'char_limits': {
+            'L': '~200 символов',
+            'M': '~160 символов',
+            'Q': '~120 символов',
+            'H': '~80 символов'
+        },
+        'max_version': 20
     },
     {
         'id': 'm',
         'name': 'Средний',
         'box_size': 10,
         'border': 4,
-        'desc': 'Стандартный размер',
-        'icon': 'bi-laptop'
+        'desc': 'Универсальный размер',
+        'icon': 'bi-qr-code',
+        'char_limits': {
+            'L': '~300 символов',
+            'M': '~240 символов',
+            'Q': '~180 символов',
+            'H': '~120 символов'
+        },
+        'max_version': 30
     },
     {
         'id': 'l',
         'name': 'Большой',
         'box_size': 15,
-        'border': 6,
-        'desc': 'Для печати и постеров',
-        'icon': 'bi-tv'
+        'border': 5,
+        'desc': 'Для плакатов и дисплеев',
+        'icon': 'bi-qr-code-scan',
+        'char_limits': {
+            'L': '~500 символов',
+            'M': '~400 символов',
+            'Q': '~300 символов',
+            'H': '~200 символов'
+        },
+        'max_version': 40
     },
     {
         'id': 'xl',
         'name': 'Очень большой',
         'box_size': 20,
-        'border': 8,
-        'desc': 'Для крупных дисплеев',
-        'icon': 'bi-display'
+        'border': 6,
+        'desc': 'Для больших дисплеев и баннеров',
+        'icon': 'bi-qr-code-scan',
+        'char_limits': {
+            'L': '~700 символов',
+            'M': '~550 символов',
+            'Q': '~400 символов',
+            'H': '~280 символов'
+        },
+        'max_version': 40
     }
 ]
 
-# Базовые цвета
+# Цветовая палитра
 COLOR_OPTIONS = [
-    '#000000',  # Черный
-    '#6c63ff',  # Основной фиолетовый
-    '#dc3545',  # Красный
-    '#0d6efd',  # Синий
-    '#198754',  # Зеленый
-    '#ffc107',  # Желтый
-    '#fd7e14',  # Оранжевый
-    '#6f42c1'   # Индиго
+    '#000000', '#6c63ff', '#ff6584', '#36d1dc', '#ff9966',
+    '#59c173', '#a17fe0', '#4a00e0', '#ff416c', '#5d26c1',
+    '#00b09b', '#FF5733', '#33FF57', '#3357FF', '#FF33F6', '#F0FF33'
 ]
 
 # Уровни коррекции ошибок
-ERROR_CORRECTION = {
-    'L': qrcode.constants.ERROR_CORRECT_L,
-    'M': qrcode.constants.ERROR_CORRECT_M,
-    'Q': qrcode.constants.ERROR_CORRECT_Q,
-    'H': qrcode.constants.ERROR_CORRECT_H
+ERROR_CORRECTION_LEVELS = {
+    'L': {'name': 'L (Низкий, 7%)', 'const': ERROR_CORRECT_L},
+    'M': {'name': 'M (Средний, 15%)', 'const': ERROR_CORRECT_M},
+    'Q': {'name': 'Q (Высокий, 25%)', 'const': ERROR_CORRECT_Q},
+    'H': {'name': 'H (Максимальный, 30%)', 'const': ERROR_CORRECT_H}
 }
 
-# Описания уровней коррекции
-ERROR_DESCRIPTIONS = {
-    'L': 'L (Низкий, 7%)',
-    'M': 'M (Средний, 15%)',
-    'Q': 'Q (Высокий, 25%)',
-    'H': 'H (Максимальный, 30%)'
-}
+def get_max_chars_for_size(size_id, error_level='M'):
+    """Получает максимальное количество символов для размера и уровня коррекции."""
+    size_info = next((s for s in SIZE_OPTIONS if s['id'] == size_id), SIZE_OPTIONS[2])
+    return size_info['char_limits'].get(error_level, '~240 символов')
 
-def is_valid_hex_color(color):
-    """Проверка валидности hex цвета"""
+def validate_color(color):
+    """Проверяет и валидирует цвет в формате HEX."""
     if not color:
-        return False
-    if not color.startswith('#'):
-        color = '#' + color
-    pattern = re.compile(r'^#[0-9A-Fa-f]{6}$')
-    return bool(pattern.match(color))
-
-def get_contrast_color(color):
-    """Получение контрастного цвета фона"""
-    if not color:
-        return '#ffffff'
+        return '#000000'
     
-    # Для темных цветов используем светлый фон, для светлых - темный
-    if color.lower() == '#000000':
-        return '#121212'  # Темный фон для черного QR
-    elif color.lower() == '#ffffff':
-        return '#f8f9fa'  # Светлый фон для белого QR
+    color = color.strip()
+    hex_pattern = r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$'
     
-    try:
-        # Преобразуем hex в RGB
-        color = color.lstrip('#')
-        if len(color) == 3:
-            color = ''.join([c*2 for c in color])
-        r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
-        
-        # Вычисляем яркость (формула YIQ)
-        brightness = (r * 299 + g * 587 + b * 114) / 1000
-        
-        # Если цвет яркий (>128), используем темный фон, иначе светлый
-        return '#121212' if brightness > 128 else '#ffffff'
-    except:
-        return '#ffffff'  # По умолчанию светлый фон
-
-def create_qr_code(data, box_size=10, border=4, fill_color='#000000', error_correction='M'):
-    """Создание QR-кода с заданными параметрами"""
-    # Валидация цвета
-    if not is_valid_hex_color(fill_color):
-        fill_color = '#000000'
+    if re.match(hex_pattern, color):
+        if len(color) == 4:
+            color = f'#{color[1]*2}{color[2]*2}{color[3]*2}'
+        return color
     
-    # Получаем цвет фона на основе цвета QR-кода
-    back_color = get_contrast_color(fill_color)
+    if color in COLOR_OPTIONS:
+        return color
     
-    try:
-        # Создаем QR-код
-        qr = qrcode.QRCode(
-            version=None,  # Автоопределение версии
-            error_correction=ERROR_CORRECTION.get(error_correction, qrcode.constants.ERROR_CORRECT_M),
-            box_size=box_size,
-            border=border,
-        )
-        qr.add_data(data)
-        qr.make(fit=True)
-        
-        # Создаем изображение
-        img = qr.make_image(fill_color=fill_color, back_color=back_color)
-        
-        return qr, img, None
-    except Exception as e:
-        return None, None, str(e)
+    return '#000000'
 
-def get_qr_info(qr, img, data, selected_size, color, error_level):
-    """Получение информации о сгенерированном QR-коде"""
-    return {
-        'version': qr.version,
-        'size_px': img.size,
-        'pixel_count': img.size[0] * img.size[1],
-        'selected_size': selected_size,
-        'data_length': len(data),
-        'color': color,
-        'error_level': ERROR_DESCRIPTIONS.get(error_level, 'M (Средний, 15%)'),
-        'error_code': error_level,
-        'background_color': get_contrast_color(color),
-        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
+def optimize_data(data):
+    """Оптимизирует введенные данные для QR-кода."""
+    data = data.strip()
+    
+    # Проверяем на email
+    if '@' in data and '.' in data and not data.startswith('mailto:'):
+        if ' ' not in data and not data.startswith('http'):
+            return f'mailto:{data}'
+    
+    # Проверяем на телефон
+    phone_pattern = r'^[\d\s\-\+\(\)]+$'
+    if re.match(phone_pattern, data) and len(data.replace(' ', '')) >= 10:
+        if not data.startswith('tel:'):
+            cleaned = re.sub(r'[^\d\+]', '', data)
+            return f'tel:{cleaned}'
+    
+    # Проверяем на URL
+    if not data.startswith(('http://', 'https://', 'mailto:', 'tel:')):
+        url_pattern = r'^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}'
+        if re.match(url_pattern, data):
+            return f'https://{data}'
+    
+    return data
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
+    """Главная страница с формой генерации QR-кода."""
     qr_data_url = None
     qr_info = None
+    form_data = {}
+    warning_message = None
     
     if request.method == 'POST':
-        # Получаем данные из формы
-        data = request.form.get('data', '').strip()
-        size_id = request.form.get('size', 'm')
-        color = request.form.get('color', '#000000')
-        error_level = request.form.get('error_correction', 'M')
-        
-        # Валидация данных
-        if not data:
-            flash('Пожалуйста, введите текст для QR-кода', 'error')
-        elif len(data) > 1000:
-            flash('Текст слишком длинный (максимум 1000 символов)', 'warning')
-            data = data[:1000]
-        else:
-            # Находим выбранный размер
-            selected_size = next(
-                (s for s in SIZE_OPTIONS if s['id'] == size_id), 
-                SIZE_OPTIONS[2]  # По умолчанию средний
-            )
+        try:
+            data = request.form.get('data', '').strip()
+            if not data:
+                return render_template('index.html',
+                                    size_options=SIZE_OPTIONS,
+                                    color_options=COLOR_OPTIONS,
+                                    error="Пожалуйста, введите данные для QR-кода",
+                                    form_data=request.form)
             
-            # Генерируем QR-код
-            qr, img, error = create_qr_code(
-                data=data,
+            optimized_data = optimize_data(data)
+            size_id = request.form.get('size', 'm')
+            selected_size = next((s for s in SIZE_OPTIONS if s['id'] == size_id), SIZE_OPTIONS[2])
+            color = validate_color(request.form.get('color', '#000000'))
+            error_correction = request.form.get('error_correction', 'M')
+            data_length = len(data)
+            
+            # Создаем QR-код
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=ERROR_CORRECTION_LEVELS[error_correction]['const'],
                 box_size=selected_size['box_size'],
-                border=selected_size['border'],
-                fill_color=color,
-                error_correction=error_level
+                border=selected_size['border']
             )
             
-            if error:
-                flash(f'Ошибка генерации QR-кода: {error}', 'error')
-            else:
-                # Получаем информацию о QR-коде
-                qr_info = get_qr_info(qr, img, data, selected_size, color, error_level)
-                
-                # Конвертируем изображение в base64
-                buffer = io.BytesIO()
-                img.save(buffer, format='PNG', optimize=True)
-                buffer.seek(0)
-                
-                qr_data_url = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
-                
-                flash('QR-код успешно сгенерирован!', 'success')
-    
-    # Подготовка данных для шаблона
-    return render_template('index.html', 
-                         qr_data_url=qr_data_url, 
-                         qr_info=qr_info,
-                         size_options=SIZE_OPTIONS,
-                         color_options=COLOR_OPTIONS,
-                         current_year=datetime.now().year)
-
-@app.route('/api/generate', methods=['POST'])
-def api_generate():
-    """API endpoint для генерации QR-кода"""
-    try:
-        data = request.json.get('data', '').strip()
-        if not data:
-            return {'error': 'No data provided'}, 400
-        
-        # Параметры по умолчанию или из запроса
-        size_id = request.json.get('size', 'm')
-        color = request.json.get('color', '#000000')
-        error_level = request.json.get('error_correction', 'M')
-        
-        # Находим выбранный размер
-        selected_size = next(
-            (s for s in SIZE_OPTIONS if s['id'] == size_id), 
-            SIZE_OPTIONS[2]
-        )
-        
-        # Генерируем QR-код
-        qr, img, error = create_qr_code(
-            data=data,
-            box_size=selected_size['box_size'],
-            border=selected_size['border'],
-            fill_color=color,
-            error_correction=error_level
-        )
-        
-        if error:
-            return {'error': error}, 500
-        
-        # Конвертируем в base64
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG', optimize=True)
-        buffer.seek(0)
-        
-        qr_data_url = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
-        
-        return {
-            'success': True,
-            'qr_data_url': qr_data_url,
-            'info': {
-                'version': qr.version,
-                'size_px': img.size,
+            qr.add_data(optimized_data)
+            
+            try:
+                qr.make(fit=True)
+            except qrcode.exceptions.DataOverflowError:
+                warning_message = f"Внимание: данные ({data_length} символов) могут не поместиться. Рекомендуется выбрать больший размер."
+                qr = qrcode.QRCode(
+                    version=None,
+                    error_correction=ERROR_CORRECTION_LEVELS[error_correction]['const'],
+                    box_size=selected_size['box_size'],
+                    border=selected_size['border']
+                )
+                qr.add_data(optimized_data)
+                qr.make(fit=True)
+            
+            # Создаем изображение
+            qr_img = qr.make_image(fill_color=color, back_color="white")
+            buffer = BytesIO()
+            qr_img.save(buffer, format="PNG")
+            buffer.seek(0)
+            
+            # Конвертируем в base64
+            qr_data_url = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+            
+            # Информация о QR-коде
+            qr_info = {
+                'data': data,
+                'optimized_data': optimized_data,
+                'data_length': data_length,
                 'selected_size': selected_size,
-                'data_length': len(data),
                 'color': color,
-                'error_level': error_level
+                'error_level': ERROR_CORRECTION_LEVELS[error_correction]['name'],
+                'size_px': (
+                    qr.modules_count * selected_size['box_size'] + 2 * selected_size['border'] * selected_size['box_size'],
+                    qr.modules_count * selected_size['box_size'] + 2 * selected_size['border'] * selected_size['box_size']
+                ),
+                'version': qr.version,
+                'max_chars': get_max_chars_for_size(size_id, error_correction)
             }
-        }
-    except Exception as e:
-        return {'error': str(e)}, 500
+            
+            # Сохраняем данные формы
+            form_data = {
+                'data': data,
+                'size': size_id,
+                'color': color,
+                'error_correction': error_correction
+            }
+            
+        except Exception as e:
+            print(f"Error generating QR code: {e}")
+            return render_template('index.html',
+                                size_options=SIZE_OPTIONS,
+                                color_options=COLOR_OPTIONS,
+                                error=f"Ошибка при генерации QR-кода: {str(e)}",
+                                form_data=request.form)
+    
+    return render_template('index.html',
+                          size_options=SIZE_OPTIONS,
+                          color_options=COLOR_OPTIONS,
+                          qr_data_url=qr_data_url,
+                          qr_info=qr_info,
+                          form_data=form_data,
+                          warning_message=warning_message)
 
 @app.route('/health')
 def health_check():
-    """Эндпоинт для проверки работоспособности"""
-    return {'status': 'healthy', 'service': 'QR Generator API', 'timestamp': datetime.now().isoformat()}
+    """Эндпоинт для проверки здоровья приложения."""
+    return jsonify({'status': 'healthy', 'service': 'qr-generator'}), 200
 
 @app.route('/robots.txt')
 def robots():
-    """Файл для поисковых роботов"""
+    """Файл robots.txt для SEO."""
     return """User-agent: *
 Allow: /
-Disallow: /api/
-Sitemap: https://your-domain.com/sitemap.xml
-"""
+Disallow: /admin
+Sitemap: https://your-domain.com/sitemap.xml"""
 
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('404.html'), 404
-
-@app.errorhandler(500)
-def internal_server_error(e):
-    return render_template('500.html'), 500
+@app.route('/sitemap.xml')
+def sitemap():
+    """Sitemap для SEO."""
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+   <url>
+      <loc>https://your-domain.com/</loc>
+      <lastmod>2024-01-01</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>1.0</priority>
+   </url>
+</urlset>"""
 
 if __name__ == '__main__':
-    # Настройки для продакшена
-    debug_mode = True  # Замените на False в продакшене
-    
-    app.run(
-        debug=False,
-        host='0.0.0.0', 
-        port=5000,
-        threaded=True
-    )
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)
