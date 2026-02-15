@@ -1,0 +1,87 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /private/
+Disallow: /static/temp/
+Disallow: /temp/
+Disallow: /cache/
+Allow: /.well-known/
+Allow: /security.txt
+Allow: /robots.txt
+Allow: /sitemap.xml
+Allow: /ads.txt
+Allow: /humans.txt
+Allow: /privacy-policy
+Allow: /terms-of-service
+Allow: /cookie-policy
+Allow: /dmca-policy
+
+Sitemap: https://qrgenerator-1-38u7.onrender.com/sitemap.xml
+Sitemap: https://qrgenerator-1-38u7.onrender.com/sitemap-images.xml  # если есть отдельная карта для изображений
+
+# Хост (для Яндекса)
+Host: https://qrgenerator-1-38u7.onrender.com
+
+# Специальные боты
+User-agent: Googlebot-Image
+Allow: /static/images/
+Allow: /static/favicon/
+Disallow: /admin/
+Disallow: /private/
+
+User-agent: YandexImages
+Allow: /static/images/
+Allow: /static/favicon/
+Disallow: /admin/
+Disallow: /private/
+
+User-agent: Googlebot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Bingbot
+Crawl-delay: 2
+Allow: /
+
+User-agent: Yandex
+Crawl-delay: 1
+Allow: /
+
+User-agent: YandexBot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Mail.RU
+Crawl-delay: 2
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+Allow: /static/images/
+
+User-agent: FacebookExternalHit
+Allow: /
+Allow: /static/images/
+
+# Security bots (исправлено - для security.txt не нужен отдельный юзер-агент)
+User-agent: *
+Allow: /.well-known/security.txt
+Allow: /security.txt
+
+# Полезные боты
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+# Устаревшие боты
+User-agent: ia_archiver
+Disallow: /
+
+User-agent: MJ12bot
+Crawl-delay: 5
+Allow: /
